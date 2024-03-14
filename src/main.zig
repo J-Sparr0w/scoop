@@ -3,12 +3,11 @@ const std = @import("std");
 fn usage() !void {
     var std_err = std.io.getStdErr().writer();
 
-    const start_path_param = "path: Starting directory for the search.\n\tExample: find /path/to/search";
-
     const options_param =
         \\Options
         \\-h, -help                 Print this help page
-        \\-name [pattern]           Searches for files with a specific name or pattern.
+        \\-path [path/to/search]    Path to search for the file or directory,
+        \\                          (e.g., find /path/to/search)
         \\-type type                Specifies the type of file to search for 
         \\                          (e.g., f for regular files, d for directories).
         \\-size [+/-]n              Searches for files based on size. '+n' finds larger files, '-n' finds smaller files. 'n' measures size in characters.
@@ -23,36 +22,87 @@ fn usage() !void {
         \\-iname pattern            Case-insensitive version of '-name'. Searches for files with a specific name or pattern, regardless of case.
     ;
 
-    try std_err.print("find [start-path] [options] [expression]\n{s}\n{s}", .{ start_path_param, options_param });
+    try std_err.print("Usage: find [options] [expression]\n\n{s}", .{options_param});
 }
 
 const Arg = struct {
     start_path: []const u8,
-    name: []const u8,
-    file_type: []const u8,
-    size: isize,
+    name: ?[]const u8,
+    file_type: ?[]const u8,
+    size: ?isize,
+    maxdepth: usize,
+    mindepth: usize,
+    is_empty: bool,
+    is_case_sensitive: bool,
+    // delete: bool,
     // print_path:bool, NOT IMPLEMENTED: this is expected to be the default behavior
 
     fn new() Arg {
         return .{
             .start_path = ".",
-            .name = undefined,
-            .file_type = undefined,
-            .size = undefined,
+            .name = null,
+            .file_type = null,
+            .size = null,
+            .maxdepth = std.math.maxInt(usize),
+            .mindepth = 0,
+            .is_empty = false,
+            .is_case_sensitive = false,
         };
     }
 
     fn printArgs(self: Arg) void {
-        std.debug.print("\n", .{});
-        inline for (std.meta.fields(@TypeOf(self))) |f| {
-            if (f.type == isize) {
-                std.log.info(f.name ++ "= '{any}'", .{@as(f.type, @field(self, f.name))});
-            } else {
-                std.log.info(f.name ++ "= '{s}'", .{@as(f.type, @field(self, f.name))});
-            }
-        }
+        std.debug.print("\n\n", .{});
+        std.log.info("start_path: {s}", .{self.start_path});
+        std.log.info("name: {?s}", .{self.name});
+        std.log.info("type: {?s}", .{self.file_type});
+        std.log.info("size: {?any}", .{self.size});
+        std.log.info("maxdepth: {}", .{self.maxdepth});
+        std.log.info("mindepth: {}", .{self.mindepth});
+        std.log.info("is_empty: {}", .{self.is_empty});
+        std.log.info("is_case_sensitive: {}", .{self.is_case_sensitive});
+
+        //  inline for (std.meta.fields(@TypeOf(self))) |f| {
+        //     if (f.type == isize) {
+        //         std.log.info(f.name ++ "= '{any}'", .{@as(f.type, @field(self, f.name))});
+        //     } else if(f.type == std.builtin.Type.Optional) {
+        //         std.log.info(f.name ++ "= '{s}'", .{@as(f.type, @field(self, f.name))});
+
+        //     } else {
+        //         std.log.info(f.name ++ "= '{s}'", .{@as(f.type, @field(self, f.name))});
+        //     }
+        // }
     }
 };
+
+pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
+    var path_buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+    const absolute_path = try std.fs.realpath(cmd_args.start_path, &path_buffer);
+
+    var starting_dir = try std.fs.openIterableDirAbsolute(absolute_path, .{});
+    defer starting_dir.close();
+
+    var dir_walker = try starting_dir.walk(allocator);
+    defer dir_walker.deinit();
+
+    while (try dir_walker.next()) |entry| {
+        if (cmd_args.name) |search_name| {
+            var string = search_name;
+
+            if (!isLowerCaseString(search_name) and cmd_args.is_case_sensitive)
+                string = try std.ascii.allocLowerString(allocator, search_name);
+            if (std.mem.eql(u8, search_name, entry.basename)) {}
+        }
+    }
+}
+
+fn isLowerCaseString(str: []const u8) bool {
+    for (str) |ch| {
+        if (!std.ascii.isLower(ch)) {
+            return false;
+        }
+    }
+    return true;
+}
 
 pub fn main() !u8 {
     usage() catch |err| {
@@ -77,11 +127,10 @@ pub fn main() !u8 {
 
     while (args.next()) |arg| {
         if (std.mem.startsWith(u8, arg, "-")) {
-            if (std.mem.eql(u8, arg[1..], "name")) {
+            if (std.mem.eql(u8, arg[1..], "path")) {
                 //
-                std.debug.print("\nits a name\n", .{});
                 if (args.next()) |name| {
-                    cmd_args.name = std.mem.trim(u8, name, "\"");
+                    cmd_args.start_path = std.mem.trim(u8, name, "\"");
                 } else {
                     std.log.err("Must specify file name after -name\n", .{});
                     try usage();
@@ -109,31 +158,51 @@ pub fn main() !u8 {
                     try usage();
                     return 0x7f;
                 }
+            } else if (std.mem.eql(u8, arg[1..], "maxdepth")) {
+                //
+                if (args.next()) |depth| {
+                    const trimmed_depth = std.mem.trim(u8, depth, "\"");
+                    cmd_args.maxdepth = std.fmt.parseInt(usize, trimmed_depth, 10) catch {
+                        std.log.err("\nERROR: not able to parse size specified as [{s}]\n", .{depth});
+                        return 0x7f;
+                    };
+                }
+            } else if (std.mem.eql(u8, arg[1..], "mindepth")) {
+                //
+                if (args.next()) |depth| {
+                    const trimmed_depth = std.mem.trim(u8, depth, "\"");
+                    cmd_args.maxdepth = std.fmt.parseInt(usize, trimmed_depth, 10) catch {
+                        std.log.err("\nERROR: not able to parse size specified as [{s}]\n", .{depth});
+                        return 0x7f;
+                    };
+                }
+            } else if (std.mem.eql(u8, arg[1..], "empty")) {
+                //
+                cmd_args.is_empty = true;
+            } else if (std.mem.eql(u8, arg[1..], "c")) {
+                //
+                cmd_args.is_case_sensitive = true;
+            } else if (std.mem.eql(u8, arg[1..], "print")) {
+                //EXPECTED TO BE DEFAULT BEHAVIOR
+            } else if (std.mem.eql(u8, arg[1..], "delete")) {
+                //TODO
+            } else if (std.mem.eql(u8, arg[1..], "execdir")) {
+                //TODO
             } else if (std.mem.eql(u8, arg[1..], "mtime")) {
                 //TODO
             } else if (std.mem.eql(u8, arg[1..], "exec")) {
                 //TODO
-            } else if (std.mem.eql(u8, arg[1..], "print")) {
-                //
-                cmd_args.print = true;
-            } else if (std.mem.eql(u8, arg[1..], "maxdepth")) {
-                //
-            } else if (std.mem.eql(u8, arg[1..], "mindepth")) {
-                //
-            } else if (std.mem.eql(u8, arg[1..], "empty")) {
-                //
-            } else if (std.mem.eql(u8, arg[1..], "delete")) {
-                //
-            } else if (std.mem.eql(u8, arg[1..], "execdir")) {
-                //
-
-            } else if (std.mem.eql(u8, arg[1..], "iname")) {
-                //
             }
+        } else {
+            cmd_args.name = arg;
+            break;
         }
     }
 
     cmd_args.printArgs();
+
+    try find(cmd_args, gpa);
+
     return 0;
 }
 
