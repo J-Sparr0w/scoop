@@ -19,7 +19,7 @@ fn usage() !void {
         \\-empty                    Finds empty files and directories.
         \\-delete                   Deletes files that match the specified criteria.
         \\-execdir cmd_args {} \;    Executes a cmd_args on each file found, from the directory containing the matched file.
-        \\-iname pattern            Case-insensitive version of '-name'. Searches for files with a specific name or pattern, regardless of case.
+        \\-iname [pattern]           Case-insensitive version of '-name'. Searches for files with a specific name or pattern, regardless of case.
     ;
 
     try std_err.print("Usage: find [options] [expression]\n\n{s}", .{options_param});
@@ -28,7 +28,7 @@ fn usage() !void {
 const Arg = struct {
     start_path: []const u8,
     name: ?[]const u8,
-    file_type: ?[]const u8,
+    file_type: ?u8,
     size: ?isize,
     maxdepth: usize,
     mindepth: usize,
@@ -54,7 +54,7 @@ const Arg = struct {
         std.debug.print("\n\n", .{});
         std.log.info("start_path: {s}", .{self.start_path});
         std.log.info("name: {?s}", .{self.name});
-        std.log.info("type: {?s}", .{self.file_type});
+        std.log.info("type: {?c}", .{self.file_type});
         std.log.info("size: {?any}", .{self.size});
         std.log.info("maxdepth: {}", .{self.maxdepth});
         std.log.info("mindepth: {}", .{self.mindepth});
@@ -84,15 +84,120 @@ pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
     var dir_walker = try starting_dir.walk(allocator);
     defer dir_walker.deinit();
 
+    var count: usize = 0;
+
     while (try dir_walker.next()) |entry| {
+        const curr_path = entry.path;
+        var match_found = false;
+
+        // std.log.info("curr_path: {s} and {s}", .{ curr_path, entry.basename });
+        // std.log.info("stat: {any}", .{stat});
+
         if (cmd_args.name) |search_name| {
             var string = search_name;
 
             if (!isLowerCaseString(search_name) and cmd_args.is_case_sensitive)
                 string = try std.ascii.allocLowerString(allocator, search_name);
-            if (std.mem.eql(u8, search_name, entry.basename)) {}
+            if (std.mem.eql(u8, string, entry.basename)) {
+                match_found = true;
+                // std.log.debug("match found for {s}", .{string});
+            } else {
+                match_found = false;
+                continue;
+            }
+            if (cmd_args.file_type) |file_type| {
+                // var ext_idx = undefined;
+                // if (entry.kind == .directory) {
+                //     match_found = false;
+                //     continue;
+                // }
+                // for (entry.basename, 0..) |ch, i| {
+                //     if (ch == '.') {
+                //         ext_idx = i;
+                //     }
+                // }
+                // if (std.mem.eql(u8, file_type, entry.basename[ext_idx..])) {
+                //     match_found = true;
+                // } else {
+                //     match_found = false;
+                //     continue;
+                // }
+
+                switch (entry.kind) {
+                    .directory => {
+                        if (file_type == 'd') {
+                            // std.log.debug("match found with same type '{}' for {s}", .{ entry.kind, string });
+
+                            match_found = true;
+                        } else {
+                            match_found = false;
+                            continue;
+                        }
+                    },
+                    .file => {
+                        if (file_type == 'f') {
+                            // std.log.debug("match found with same type 'f' for {s}", .{string});
+
+                            match_found = true;
+                        } else {
+                            match_found = false;
+                            continue;
+                        }
+                    },
+                    else => {
+                        match_found = false;
+                        continue;
+                    },
+                }
+            }
+            if (cmd_args.size) |size| {
+                const file_size = blk: {
+                    switch (entry.kind) {
+                        .file => {
+                            var buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+                            const absolute_file_path = try concatPath(&buffer, absolute_path, entry.path);
+                            // std.log.debug("abs_file_path: {s}", .{absolute_file_path});
+
+                            const curr_file = std.fs.openFileAbsolute(absolute_file_path, .{}) catch {
+                                std.log.err("File cannot be opened, path: {s}", .{entry.path});
+                                continue;
+                            };
+                            defer curr_file.close();
+                            const stat = try curr_file.stat();
+                            break :blk stat.size;
+                        },
+                        .directory => {
+                            const stat = try entry.dir.stat();
+                            break :blk stat.size;
+                        },
+                        else => {
+                            break :blk 0;
+                        },
+                    }
+                };
+                // std.log.info("size for {s}: {}", .{ search_name, std.fmt.fmtIntSizeDec(file_size) });
+                if (size < 0) {
+                    if (file_size < size) {
+                        match_found = true;
+                    } else {
+                        match_found = false;
+                        continue;
+                    }
+                } else if (size > 0) {
+                    if (file_size > size) {
+                        match_found = true;
+                    } else {
+                        match_found = false;
+                        continue;
+                    }
+                }
+            }
         }
-    }
+        try std.io.getStdErr().writer().print("\n{s}", .{curr_path});
+        count += 1;
+    } //while
+
+    try std.io.getStdErr().writer().print("\n\n{} files found!\n", .{count});
 }
 
 fn isLowerCaseString(str: []const u8) bool {
@@ -104,12 +209,28 @@ fn isLowerCaseString(str: []const u8) bool {
     return true;
 }
 
-pub fn main() !u8 {
-    usage() catch |err| {
-        std.log.err("Could not print to stdErr, [{s}]", .{@errorName(err)});
-        return 0x7f;
-    };
+const concatPathError = error{
+    BufferTooSmall,
+};
 
+fn concatPath(buffer: []u8, first: []const u8, second: []const u8) ![]const u8 {
+    const total_len = first.len + second.len + 1;
+    if (buffer.len < (total_len)) {
+        return concatPathError.BufferTooSmall;
+    }
+    // std.debug.print("first: {s} and second: {s}", .{ first, second });
+    for (first, 0..) |ch, i| {
+        buffer[i] = ch;
+    }
+    buffer[first.len] = '\\';
+    for (second, first.len + 1..) |ch, i| {
+        buffer[i] = ch;
+    }
+
+    return buffer[0..total_len];
+}
+
+pub fn main() !u8 {
     var gpa_impl = std.heap.GeneralPurposeAllocator(.{}){};
     defer {
         const check = gpa_impl.deinit();
@@ -139,7 +260,9 @@ pub fn main() !u8 {
             } else if (std.mem.eql(u8, arg[1..], "type")) {
                 //
                 if (args.next()) |file_type| {
-                    cmd_args.file_type = std.mem.trim(u8, file_type, "\"");
+                    if (std.mem.eql(u8, file_type, "d") or std.mem.eql(u8, file_type, "f")) {
+                        cmd_args.file_type = file_type[0];
+                    }
                 } else {
                     std.log.err("\nMust specify file type after -type\n", .{});
                     try usage();
@@ -192,6 +315,13 @@ pub fn main() !u8 {
                 //TODO
             } else if (std.mem.eql(u8, arg[1..], "exec")) {
                 //TODO
+            } else {
+                std.log.err("Invalid option [{s}]\n\n", .{arg});
+                usage() catch |err| {
+                    std.log.err("Could not print to stdErr, [{s}]", .{@errorName(err)});
+                    return 0x7f;
+                };
+                return 0x7f;
             }
         } else {
             cmd_args.name = arg;
