@@ -14,12 +14,12 @@ fn usage() !void {
         \\-mtime n                  Finds files based on modification time. 'n' represents the number of days ago.
         \\-exec cmd_args {}          Executes a cmd_args on each file found.
         \\-print                    Displays the path names of files that match the specified criteria.
-        \\-maxdepth levels          Restricts the search to a specified directory depth.
-        \\-mindepth levels          Specifies the minimum directory depth for the search.
-        \\-empty                    Finds empty files and directories.
-        \\-delete                   Deletes files that match the specified criteria.
-        \\-execdir cmd_args {} \;    Executes a cmd_args on each file found, from the directory containing the matched file.
-        \\-iname [pattern]           Case-insensitive version of '-name'. Searches for files with a specific name or pattern, regardless of case.
+        \\-max levels               TODO:Restricts the search to a specified directory depth.
+        \\-min levels               TODO:Specifies the minimum directory depth for the search.
+        \\-empty                    TODO: Finds empty files and directories.
+        \\-delete                   TODO: Deletes files that match the specified criteria.
+        \\-execdir cmd_args {} \;   TODO: Executes a cmd_args on each file found, from the directory containing the matched file.
+        \\-c                        Case-insensitive version of '-name'. Searches for files with a specific name or pattern, regardless of case.
     ;
 
     try std_err.print("Usage: find [options] [expression]\n\n{s}", .{options_param});
@@ -89,9 +89,13 @@ pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
     while (try dir_walker.next()) |entry| {
         const curr_path = entry.path;
         var match_found = false;
-
         // std.log.info("curr_path: {s} and {s}", .{ curr_path, entry.basename });
         // std.log.info("stat: {any}", .{stat});
+
+        // var item = self.stack.pop();
+        //             if (self.stack.items.len != 0) {
+        //                 item.iter.dir.close();
+        //             }
 
         if (cmd_args.name) |search_name| {
             var string = search_name;
@@ -193,6 +197,41 @@ pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
                 }
             }
         }
+
+        if (cmd_args.is_empty) {
+            const file_size = blk: {
+                switch (entry.kind) {
+                    .file => {
+                        var buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+                        const absolute_file_path = try concatPath(&buffer, absolute_path, entry.path);
+                        // std.log.debug("abs_file_path: {s}", .{absolute_file_path});
+
+                        const curr_file = std.fs.openFileAbsolute(absolute_file_path, .{}) catch {
+                            std.log.err("File cannot be opened, path: {s}", .{entry.path});
+                            continue;
+                        };
+                        defer curr_file.close();
+                        const stat = try curr_file.stat();
+                        break :blk stat.size;
+                    },
+                    .directory => {
+                        const stat = try entry.dir.stat();
+                        break :blk stat.size;
+                    },
+                    else => {
+                        break :blk 0;
+                    },
+                }
+            };
+
+            if (file_size == 0) {
+                match_found = true;
+            } else {
+                match_found = false;
+                continue;
+            }
+        }
+
         try std.io.getStdErr().writer().print("\n{s}", .{curr_path});
         count += 1;
     } //while
@@ -300,14 +339,16 @@ pub fn main() !u8 {
                     };
                 }
             } else if (std.mem.eql(u8, arg[1..], "empty")) {
-                //
                 cmd_args.is_empty = true;
             } else if (std.mem.eql(u8, arg[1..], "c")) {
-                //
                 cmd_args.is_case_sensitive = true;
             } else if (std.mem.eql(u8, arg[1..], "print")) {
                 //EXPECTED TO BE DEFAULT BEHAVIOR
             } else if (std.mem.eql(u8, arg[1..], "delete")) {
+                //TODO
+            } else if (std.mem.eql(u8, arg[1..], "min")) {
+                //TODO
+            } else if (std.mem.eql(u8, arg[1..], "max")) {
                 //TODO
             } else if (std.mem.eql(u8, arg[1..], "execdir")) {
                 //TODO
@@ -328,7 +369,15 @@ pub fn main() !u8 {
             break;
         }
     }
-
+    if (!cmd_args.name and !cmd_args.is_empty) {
+        std.log.err("Must specify a file name or use -empty flag instead.", .{});
+        try usage();
+        return 0x7f;
+    } else if (cmd_args.name and cmd_args.is_empty) {
+        std.log.err("Cannot specify file name with the -empty flag.", .{});
+        try usage();
+        return 0x7f;
+    }
     cmd_args.printArgs();
 
     try find(cmd_args, gpa);
