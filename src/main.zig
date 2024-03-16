@@ -255,7 +255,7 @@ pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
         count += 1;
     } //while
 
-    writer.print("\n\n{} files found!\n", .{count}) catch {};
+    writer.print("\n\n{} file(s) found!\n", .{count}) catch {};
     try bw.flush();
 }
 
