@@ -86,7 +86,10 @@ pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
 
     var count: usize = 0;
 
-    while (try dir_walker.next()) |entry| {
+    while (dir_walker.next() catch |err| {
+        std.log.err("[{s}]", .{@errorName(err)});
+        return;
+    }) |entry| {
         const curr_path = entry.path;
         var match_found = false;
         // std.log.info("curr_path: {s} and {s}", .{ curr_path, entry.basename });
@@ -344,6 +347,9 @@ pub fn main() !u8 {
                 cmd_args.is_case_sensitive = true;
             } else if (std.mem.eql(u8, arg[1..], "print")) {
                 //EXPECTED TO BE DEFAULT BEHAVIOR
+            } else if (std.mem.eql(u8, arg[1..], "h")) {
+                try usage();
+                return 0;
             } else if (std.mem.eql(u8, arg[1..], "delete")) {
                 //TODO
             } else if (std.mem.eql(u8, arg[1..], "min")) {
@@ -369,16 +375,16 @@ pub fn main() !u8 {
             break;
         }
     }
-    if (!cmd_args.name and !cmd_args.is_empty) {
+    if (cmd_args.name == null and !cmd_args.is_empty) {
         std.log.err("Must specify a file name or use -empty flag instead.", .{});
         try usage();
         return 0x7f;
-    } else if (cmd_args.name and cmd_args.is_empty) {
+    } else if (cmd_args.name != null and cmd_args.is_empty) {
         std.log.err("Cannot specify file name with the -empty flag.", .{});
         try usage();
         return 0x7f;
     }
-    cmd_args.printArgs();
+    // cmd_args.printArgs();
 
     try find(cmd_args, gpa);
 

@@ -1,0 +1,1 @@
+pather zig-out\bin\scoop.exe 
