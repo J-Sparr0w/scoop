@@ -125,8 +125,26 @@ pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
                 match_found = true;
                 // std.log.debug("match found for {s}", .{string});
             } else {
-                match_found = false;
-                continue;
+                var ext_idx: u16 = undefined;
+                if (entry.kind != .file) {
+                    match_found = false;
+                    continue;
+                }
+                for (entry.basename, 0..) |ch, i| {
+                    // std.log.debug("No dot found, ch: {c}", .{ch});
+                    if (ch == '.') {
+                        // std.log.debug("ch: {c}", .{ch});
+                        ext_idx = @intCast(i);
+                        break;
+                    }
+                }
+                // std.log.debug("ext_idx: {}", .{ext_idx});
+                if (ext_idx < entry.basename.len and std.mem.eql(u8, string, entry.basename[0..ext_idx])) {
+                    match_found = true;
+                } else {
+                    match_found = false;
+                    continue;
+                }
             }
             if (cmd_args.file_type) |file_type| {
                 // var ext_idx = undefined;
