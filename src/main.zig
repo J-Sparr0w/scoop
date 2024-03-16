@@ -75,10 +75,17 @@ const Arg = struct {
 };
 
 pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
+    var stdout = std.io.getStdOut().writer();
+    var bw = std.io.bufferedWriter(stdout);
+    var writer = bw.writer();
+
     var path_buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
     const absolute_path = try std.fs.realpath(cmd_args.start_path, &path_buffer);
 
-    var starting_dir = try std.fs.openIterableDirAbsolute(absolute_path, .{});
+    var starting_dir = std.fs.openIterableDirAbsolute(absolute_path, .{}) catch {
+        std.log.err("Unable to open {s}", .{absolute_path});
+        return;
+    };
     defer starting_dir.close();
 
     var dir_walker = try starting_dir.walk(allocator);
@@ -86,19 +93,26 @@ pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
 
     var count: usize = 0;
 
-    while (dir_walker.next() catch |err| {
-        std.log.err("[{s}]", .{@errorName(err)});
-        return;
+    while (blk: {
+        break :blk dir_walker.next() catch {
+            std.log.err("Unable to open {s}, current stack items: {s}", .{ absolute_path, dir_walker.name_buffer.items });
+
+            while (dir_walker.stack.items.len != 0) {
+                var item = dir_walker.stack.pop();
+                if (dir_walker.stack.items.len != 0) {
+                    item.iter.dir.close();
+                }
+                break :blk dir_walker.next() catch {
+                    continue;
+                };
+            }
+            return;
+        };
     }) |entry| {
         const curr_path = entry.path;
         var match_found = false;
         // std.log.info("curr_path: {s} and {s}", .{ curr_path, entry.basename });
         // std.log.info("stat: {any}", .{stat});
-
-        // var item = self.stack.pop();
-        //             if (self.stack.items.len != 0) {
-        //                 item.iter.dir.close();
-        //             }
 
         if (cmd_args.name) |search_name| {
             var string = search_name;
@@ -235,11 +249,13 @@ pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
             }
         }
 
-        try std.io.getStdErr().writer().print("\n{s}", .{curr_path});
+        writer.print("\n{s}", .{curr_path}) catch {};
         count += 1;
     } //while
 
-    try std.io.getStdErr().writer().print("\n\n{} files found!\n", .{count});
+    writer.print("\n\n{} files found!\n", .{count}) catch {};
+
+    try bw.flush();
 }
 
 fn isLowerCaseString(str: []const u8) bool {
