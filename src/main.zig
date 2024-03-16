@@ -93,9 +93,11 @@ pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
 
     var count: usize = 0;
 
+    try writer.print("\nStarting Path: {s}\n", .{absolute_path});
+
     while (blk: {
         break :blk dir_walker.next() catch {
-            std.log.err("Unable to open {s}, current stack items: {s}", .{ absolute_path, dir_walker.name_buffer.items });
+            try writer.print("\n\nUnable to open {s} => {s}", .{ absolute_path, dir_walker.name_buffer.items });
 
             while (dir_walker.stack.items.len != 0) {
                 var item = dir_walker.stack.pop();
@@ -253,9 +255,8 @@ pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
         count += 1;
     } //while
 
-    writer.print("\n\n{} files found!\n", .{count}) catch {};
-
     try bw.flush();
+    writer.print("\n\n{} files found!\n", .{count}) catch {};
 }
 
 fn isLowerCaseString(str: []const u8) bool {
