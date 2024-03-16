@@ -255,8 +255,8 @@ pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
         count += 1;
     } //while
 
-    try bw.flush();
     writer.print("\n\n{} files found!\n", .{count}) catch {};
+    try bw.flush();
 }
 
 fn isLowerCaseString(str: []const u8) bool {
