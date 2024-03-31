@@ -118,10 +118,18 @@ pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
 
         if (cmd_args.name) |search_name| {
             var string = search_name;
-
-            if (!isLowerCaseString(search_name) and cmd_args.is_case_sensitive)
+            var filename = entry.basename;
+            defer {
+                if (!cmd_args.is_case_sensitive) {
+                    allocator.free(string);
+                    allocator.free(filename);
+                }
+            }
+            if (!cmd_args.is_case_sensitive) {
                 string = try std.ascii.allocLowerString(allocator, search_name);
-            if (std.mem.eql(u8, string, entry.basename)) {
+                filename = try std.ascii.allocLowerString(allocator, entry.basename);
+            }
+            if (std.mem.eql(u8, string, filename)) {
                 match_found = true;
                 // std.log.debug("match found for {s}", .{string});
             } else {
@@ -130,7 +138,7 @@ pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
                     match_found = false;
                     continue;
                 }
-                for (entry.basename, 0..) |ch, i| {
+                for (filename, 0..) |ch, i| {
                     // std.log.debug("No dot found, ch: {c}", .{ch});
                     if (ch == '.') {
                         // std.log.debug("ch: {c}", .{ch});
@@ -139,7 +147,8 @@ pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
                     }
                 }
                 // std.log.debug("ext_idx: {}", .{ext_idx});
-                if (ext_idx < entry.basename.len and std.mem.eql(u8, string, entry.basename[0..ext_idx])) {
+                if (ext_idx < filename.len and std.mem.eql(u8, string, filename[0..ext_idx])) {
+                    // std.log.debug("match found for '{s}' with '{s}' but extensions dont match", .{ string, entry.basename });
                     match_found = true;
                 } else {
                     match_found = false;
