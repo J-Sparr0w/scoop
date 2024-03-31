@@ -11,6 +11,7 @@ fn usage() !void {
         \\-type type                Specifies the type of file to search for 
         \\                          (e.g., f for regular files, d for directories).
         \\-size [+/-]n              Searches for files based on size. '+n' finds larger files, '-n' finds smaller files. 'n' measures size in characters.
+        \\-c                        Case-insensitive version of '-name'. Searches for files with a specific name or pattern, regardless of case.
         \\-mtime n                  Finds files based on modification time. 'n' represents the number of days ago.
         \\-exec cmd_args {}          Executes a cmd_args on each file found.
         \\-print                    Displays the path names of files that match the specified criteria.
@@ -19,7 +20,7 @@ fn usage() !void {
         \\-empty                    TODO: Finds empty files and directories.
         \\-delete                   TODO: Deletes files that match the specified criteria.
         \\-execdir cmd_args {} \;   TODO: Executes a cmd_args on each file found, from the directory containing the matched file.
-        \\-c                        Case-insensitive version of '-name'. Searches for files with a specific name or pattern, regardless of case.
+        \\
     ;
 
     try std_err.print("Usage: find [options] [expression]\n\n{s}", .{options_param});
@@ -295,14 +296,14 @@ fn isLowerCaseString(str: []const u8) bool {
     return true;
 }
 
-const concatPathError = error{
+const ConcatPathError = error{
     BufferTooSmall,
 };
 
-fn concatPath(buffer: []u8, first: []const u8, second: []const u8) ![]const u8 {
+fn concatPath(buffer: []u8, first: []const u8, second: []const u8) ConcatPathError![]const u8 {
     const total_len = first.len + second.len + 1;
     if (buffer.len < (total_len)) {
-        return concatPathError.BufferTooSmall;
+        return ConcatPathError.BufferTooSmall;
     }
     // std.debug.print("first: {s} and second: {s}", .{ first, second });
     for (first, 0..) |ch, i| {
@@ -350,8 +351,9 @@ pub fn main() !u8 {
                         cmd_args.file_type = file_type[0];
                     }
                 } else {
-                    std.log.err("\nMust specify file type after -type\n", .{});
                     try usage();
+                    std.debug.print("\n", .{});
+                    std.log.err("\nMust specify file type after -type\n", .{});
                     return 0x7f;
                 }
             } else if (std.mem.eql(u8, arg[1..], "size")) {
@@ -359,12 +361,15 @@ pub fn main() !u8 {
                 if (args.next()) |size| {
                     const trimmed_size = std.mem.trim(u8, size, "\"");
                     cmd_args.size = std.fmt.parseInt(isize, trimmed_size, 10) catch {
-                        std.log.err("\nERROR: not able to parse size specified as [{s}]\n", .{size});
+                        std.debug.print("\n", .{});
+
+                        std.log.err("not able to parse size specified as [{s}]\n", .{size});
                         return 0x7f;
                     };
                 } else {
-                    std.log.err("\nMust specify file type after -type", .{});
                     try usage();
+                    std.debug.print("\n", .{});
+                    std.log.err("Must specify file type after -type\n", .{});
                     return 0x7f;
                 }
             } else if (std.mem.eql(u8, arg[1..], "maxdepth")) {
@@ -372,7 +377,7 @@ pub fn main() !u8 {
                 if (args.next()) |depth| {
                     const trimmed_depth = std.mem.trim(u8, depth, "\"");
                     cmd_args.maxdepth = std.fmt.parseInt(usize, trimmed_depth, 10) catch {
-                        std.log.err("\nERROR: not able to parse size specified as [{s}]\n", .{depth});
+                        std.log.err("not able to parse size specified as [{s}]\n", .{depth});
                         return 0x7f;
                     };
                 }
@@ -381,7 +386,7 @@ pub fn main() !u8 {
                 if (args.next()) |depth| {
                     const trimmed_depth = std.mem.trim(u8, depth, "\"");
                     cmd_args.maxdepth = std.fmt.parseInt(usize, trimmed_depth, 10) catch {
-                        std.log.err("\nERROR: not able to parse size specified as [{s}]\n", .{depth});
+                        std.log.err(" not able to parse size specified as [{s}]\n", .{depth});
                         return 0x7f;
                     };
                 }
@@ -407,11 +412,12 @@ pub fn main() !u8 {
             } else if (std.mem.eql(u8, arg[1..], "exec")) {
                 //TODO
             } else {
-                std.log.err("Invalid option [{s}]\n\n", .{arg});
                 usage() catch |err| {
-                    std.log.err("Could not print to stdErr, [{s}]", .{@errorName(err)});
+                    std.log.err("Could not print to stdErr, [{s}]\n", .{@errorName(err)});
                     return 0x7f;
                 };
+                std.debug.print("\n", .{});
+                std.log.err("Invalid option [{s}]\n\n", .{arg});
                 return 0x7f;
             }
         } else {
@@ -420,12 +426,15 @@ pub fn main() !u8 {
         }
     }
     if (cmd_args.name == null and !cmd_args.is_empty) {
-        std.log.err("Must specify a file name or use -empty flag instead.", .{});
         try usage();
+        std.debug.print("\n", .{});
+
+        std.log.err("Must specify a file name or use -empty flag instead.\n", .{});
         return 0x7f;
     } else if (cmd_args.name != null and cmd_args.is_empty) {
-        std.log.err("Cannot specify file name with the -empty flag.", .{});
         try usage();
+        std.debug.print("\n", .{});
+        std.log.err("Cannot specify file name with the -empty flag.\n", .{});
         return 0x7f;
     }
     // cmd_args.printArgs();
