@@ -80,11 +80,16 @@ const Arg = struct {
 };
 
 pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
-    var stdout = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout);
-    var partial_bw = std.io.bufferedWriter(stdout);
+    var bw = std.ArrayList(u8).init(allocator);
+    var partial_bw = std.ArrayList(u8).init(allocator);
     var writer = bw.writer();
     var partial_writer = partial_bw.writer();
+    defer {
+        std.io.getStdOut().writer().print("{s}", .{bw.items}) catch {};
+        std.io.getStdOut().writer().print("{s}", .{partial_bw.items}) catch {};
+        bw.deinit();
+        partial_bw.deinit();
+    }
 
     var path_buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
     const absolute_path = try std.fs.realpath(cmd_args.start_path, &path_buffer);
@@ -308,9 +313,8 @@ pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
         }
     } //while
     writer.print("\n{} file(s) found!\n", .{count}) catch {};
+
     partial_writer.print("\n{} partial matche(s) found!\n", .{partial_count}) catch {};
-    try bw.flush();
-    try partial_bw.flush();
 }
 
 fn isLowerCaseString(str: []const u8) bool {
