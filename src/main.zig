@@ -12,6 +12,7 @@ fn usage() !void {
         \\                          (e.g., f for regular files, d for directories).
         \\-size [+/-]n              Searches for files based on size. '+n' finds larger files, '-n' finds smaller files. 'n' measures size in characters.
         \\-c                        Case-insensitive version of '-name'. Searches for files with a specific name or pattern, regardless of case.
+        \\-p                        Show Partial matches. (default: false)
         \\-mtime n                  Finds files based on modification time. 'n' represents the number of days ago.
         \\-exec cmd_args {}          Executes a cmd_args on each file found.
         \\-print                    Displays the path names of files that match the specified criteria.
@@ -31,6 +32,7 @@ const Arg = struct {
     name: ?[]const u8,
     file_type: ?u8,
     size: ?isize,
+    partial: bool,
     maxdepth: usize,
     mindepth: usize,
     is_empty: bool,
@@ -44,6 +46,7 @@ const Arg = struct {
             .name = null,
             .file_type = null,
             .size = null,
+            .partial = false,
             .maxdepth = std.math.maxInt(usize),
             .mindepth = 0,
             .is_empty = false,
@@ -57,6 +60,7 @@ const Arg = struct {
         std.log.info("name: {?s}", .{self.name});
         std.log.info("type: {?c}", .{self.file_type});
         std.log.info("size: {?any}", .{self.size});
+        std.log.info("partial matches: {}", .{self.partial});
         std.log.info("maxdepth: {}", .{self.maxdepth});
         std.log.info("mindepth: {}", .{self.mindepth});
         std.log.info("is_empty: {}", .{self.is_empty});
@@ -78,7 +82,9 @@ const Arg = struct {
 pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
     var stdout = std.io.getStdOut().writer();
     var bw = std.io.bufferedWriter(stdout);
+    var partial_bw = std.io.bufferedWriter(stdout);
     var writer = bw.writer();
+    var partial_writer = partial_bw.writer();
 
     var path_buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
     const absolute_path = try std.fs.realpath(cmd_args.start_path, &path_buffer);
@@ -93,8 +99,13 @@ pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
     defer dir_walker.deinit();
 
     var count: usize = 0;
+    var partial_count: usize = 0;
 
     try writer.print("\nStarting Path: {s}\n", .{absolute_path});
+
+    if (cmd_args.partial) {
+        partial_writer.print("\nPartial Matches: ", .{}) catch {};
+    }
 
     while (blk: {
         break :blk dir_walker.next() catch {
@@ -114,6 +125,14 @@ pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
     }) |entry| {
         const curr_path = entry.path;
         var match_found = false;
+        var partial_match_found = false;
+        // std.debug.print("Current count: {}\n", .{count});
+        defer {
+            if (partial_match_found and !match_found) {
+                partial_writer.print("\n{s}", .{curr_path}) catch {};
+                partial_count += 1;
+            }
+        }
         // std.log.info("curr_path: {s} and {s}", .{ curr_path, entry.basename });
         // std.log.info("stat: {any}", .{stat});
 
@@ -134,6 +153,10 @@ pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
                 match_found = true;
                 // std.log.debug("match found for {s}", .{string});
             } else {
+                if (cmd_args.partial and filename.len > string.len and std.mem.eql(u8, filename[0..string.len], string)) {
+                    partial_match_found = true;
+                    match_found = false;
+                }
                 var ext_idx: u16 = undefined;
                 if (entry.kind != .file) {
                     match_found = false;
@@ -279,12 +302,15 @@ pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
             }
         }
 
-        writer.print("\n{s}", .{curr_path}) catch {};
-        count += 1;
+        if (match_found) {
+            writer.print("\n{s}", .{curr_path}) catch {};
+            count += 1;
+        }
     } //while
-
-    writer.print("\n\n{} file(s) found!\n", .{count}) catch {};
+    writer.print("\n{} file(s) found!\n", .{count}) catch {};
+    partial_writer.print("\n{} partial matche(s) found!\n", .{partial_count}) catch {};
     try bw.flush();
+    try partial_bw.flush();
 }
 
 fn isLowerCaseString(str: []const u8) bool {
@@ -396,6 +422,8 @@ pub fn main() !u8 {
                 cmd_args.is_case_sensitive = true;
             } else if (std.mem.eql(u8, arg[1..], "print")) {
                 //EXPECTED TO BE DEFAULT BEHAVIOR
+            } else if (std.mem.eql(u8, arg[1..], "p")) {
+                cmd_args.partial = true;
             } else if (std.mem.eql(u8, arg[1..], "h")) {
                 try usage();
                 return 0;
