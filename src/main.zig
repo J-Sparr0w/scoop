@@ -15,7 +15,6 @@ fn usage() !void {
         \\-p                        Show Partial matches. (default: false)
         \\-mtime n                  Finds files based on modification time. 'n' represents the number of days ago.
         \\-exec cmd_args {}          Executes a cmd_args on each file found.
-        \\-print                    Displays the path names of files that match the specified criteria.
         \\-max levels               TODO:Restricts the search to a specified directory depth.
         \\-min levels               TODO:Specifies the minimum directory depth for the search.
         \\-empty                    TODO: Finds empty files and directories.
@@ -85,6 +84,8 @@ pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
     var writer = bw.writer();
     var partial_writer = partial_bw.writer();
     defer {
+        // std.log.info("bw.items.len: {}", .{std.fmt.fmtIntSizeBin(bw.items.len)});
+        // std.log.info("partial_bw.items.len: {}", .{std.fmt.fmtIntSizeBin(partial_bw.items.len)});
         std.io.getStdOut().writer().print("{s}", .{bw.items}) catch {};
         std.io.getStdOut().writer().print("{s}", .{partial_bw.items}) catch {};
         bw.deinit();
@@ -424,9 +425,7 @@ pub fn main() !u8 {
                 cmd_args.is_empty = true;
             } else if (std.mem.eql(u8, arg[1..], "c")) {
                 cmd_args.is_case_sensitive = true;
-            } else if (std.mem.eql(u8, arg[1..], "print")) {
-                //EXPECTED TO BE DEFAULT BEHAVIOR
-            } else if (std.mem.eql(u8, arg[1..], "p")) {
+            }  else if (std.mem.eql(u8, arg[1..], "p")) {
                 cmd_args.partial = true;
             } else if (std.mem.eql(u8, arg[1..], "h")) {
                 try usage();
