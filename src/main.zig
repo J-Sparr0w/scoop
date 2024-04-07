@@ -5,21 +5,23 @@ fn usage() !void {
 
     const options_param =
         \\Options
-        \\-h, -help                 Print this help page
-        \\-path [path/to/search]    Path to search for the file or directory,
+        \\  -h, -help                 Print this help page
+        \\  -path [path/to/search]    Path to search for the file or directory,
         \\                          (e.g., find /path/to/search)
-        \\-type type                Specifies the type of file to search for 
+        \\  -type type                Specifies the type of file to search for 
         \\                          (e.g., f for regular files, d for directories).
-        \\-size [+/-]n              Searches for files based on size. '+n' finds larger files, '-n' finds smaller files. 'n' measures size in characters.
-        \\-c                        Case-insensitive version of '-name'. Searches for files with a specific name or pattern, regardless of case.
-        \\-p                        Show Partial matches. (default: false)
-        \\-mtime n                  Finds files based on modification time. 'n' represents the number of days ago.
-        \\-exec cmd_args {}          Executes a cmd_args on each file found.
-        \\-max levels               TODO:Restricts the search to a specified directory depth.
-        \\-min levels               TODO:Specifies the minimum directory depth for the search.
-        \\-empty                    TODO: Finds empty files and directories.
-        \\-delete                   TODO: Deletes files that match the specified criteria.
-        \\-execdir cmd_args {} \;   TODO: Executes a cmd_args on each file found, from the directory containing the matched file.
+        \\  -size [+/-]n              Searches for files based on size. '+n' finds larger
+        \\                            files, '-n' finds smaller files. 'n' measures size in characters.
+        \\  -c                        Case-insensitive version of '-name'. Searches for
+        \\                            files with a specific name or pattern, regardless of case.
+        \\  -p                        Show Partial matches. (default: false)
+        \\  -mtime n                  Finds files based on modification time. 'n' represents the number of days ago.
+        \\  -exec cmd_args {}          Executes a cmd_args on each file found.
+        \\  -max levels               TODO:Restricts the search to a specified directory depth.
+        \\  -min levels               TODO:Specifies the minimum directory depth for the search.
+        \\  -empty                    TODO: Finds empty files and directories.
+        \\  -delete                   TODO: Deletes files that match the specified criteria.
+        \\  -execdir cmd_args {} \;   TODO: Executes a cmd_args on each file found, from the directory containing the matched file.
         \\
     ;
 
@@ -425,7 +427,7 @@ pub fn main() !u8 {
                 cmd_args.is_empty = true;
             } else if (std.mem.eql(u8, arg[1..], "c")) {
                 cmd_args.is_case_sensitive = true;
-            }  else if (std.mem.eql(u8, arg[1..], "p")) {
+            } else if (std.mem.eql(u8, arg[1..], "p")) {
                 cmd_args.partial = true;
             } else if (std.mem.eql(u8, arg[1..], "h")) {
                 try usage();
