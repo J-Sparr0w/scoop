@@ -17,8 +17,8 @@ fn usage() !void {
         \\  -p                        Show Partial matches. (default: false)
         \\  -mtime n                  Finds files based on modification time. 'n' represents the number of days ago.
         \\  -exec cmd_args {}          Executes a cmd_args on each file found.
-        \\  -max levels               TODO:Restricts the search to a specified directory depth.
-        \\  -min levels               TODO:Specifies the minimum directory depth for the search.
+        \\  -max-depth levels               TODO:Restricts the search to a specified directory depth.
+        \\  -min-depth levels               TODO:Specifies the minimum directory depth for the search.
         \\  -empty                    TODO: Finds empty files and directories.
         \\  -delete                   TODO: Deletes files that match the specified criteria.
         \\  -execdir cmd_args {} \;   TODO: Executes a cmd_args on each file found, from the directory containing the matched file.
@@ -137,8 +137,10 @@ pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
         // std.debug.print("Current count: {}\n", .{count});
         defer {
             if (partial_match_found and !match_found) {
-                partial_writer.print("\n{s}", .{curr_path}) catch {};
-                partial_count += 1;
+                if (cmd_args.partial) {
+                    partial_writer.print("\n{s}", .{curr_path}) catch {};
+                }
+                partial_count += 1; //increment counter regardless of whether partial arguments is in the argument. it will output the number of partial matches found even if '-p' is not an argument
             }
         }
         // std.log.info("curr_path: {s} and {s}", .{ curr_path, entry.basename });
@@ -161,9 +163,16 @@ pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
                 match_found = true;
                 // std.log.debug("match found for {s}", .{string});
             } else {
-                if (cmd_args.partial and filename.len > string.len and std.mem.eql(u8, filename[0..string.len], string)) {
-                    partial_match_found = true;
-                    match_found = false;
+                if (filename.len > string.len) {
+                    //looping over filename string till it finds a match
+                    const end = 1 + filename.len - string.len;
+                    for (0..end) |i| {
+                        if (std.mem.eql(u8, filename[i .. i + string.len], string)) {
+                            partial_match_found = true;
+                            match_found = false;
+                            break;
+                        }
+                    }
                 }
                 var ext_idx: u16 = undefined;
                 if (entry.kind != .file) {
@@ -188,23 +197,6 @@ pub fn find(cmd_args: Arg, allocator: std.mem.Allocator) !void {
                 }
             }
             if (cmd_args.file_type) |file_type| {
-                // var ext_idx = undefined;
-                // if (entry.kind == .directory) {
-                //     match_found = false;
-                //     continue;
-                // }
-                // for (entry.basename, 0..) |ch, i| {
-                //     if (ch == '.') {
-                //         ext_idx = i;
-                //     }
-                // }
-                // if (std.mem.eql(u8, file_type, entry.basename[ext_idx..])) {
-                //     match_found = true;
-                // } else {
-                //     match_found = false;
-                //     continue;
-                // }
-
                 switch (entry.kind) {
                     .directory => {
                         if (file_type == 'd') {
@@ -405,24 +397,21 @@ pub fn main() !u8 {
                     std.log.err("Must specify file type after -type\n", .{});
                     return 0x7f;
                 }
-            } else if (std.mem.eql(u8, arg[1..], "maxdepth")) {
+            } else if (arg.len > 11 and std.mem.eql(u8, arg[1..11], "max-depth=")) {
                 //
-                if (args.next()) |depth| {
-                    const trimmed_depth = std.mem.trim(u8, depth, "\"");
-                    cmd_args.maxdepth = std.fmt.parseInt(usize, trimmed_depth, 10) catch {
-                        std.log.err("not able to parse size specified as [{s}]\n", .{depth});
-                        return 0x7f;
-                    };
-                }
-            } else if (std.mem.eql(u8, arg[1..], "mindepth")) {
+
+                const depth = arg[11..];
+                cmd_args.maxdepth = std.fmt.parseInt(usize, depth, 10) catch {
+                    std.log.err("Depth specified: [{s}] is invalid\nMust specify maximum depth value for search after -max-depth option\n ", .{depth});
+                    return 0x7f;
+                };
+            } else if (arg.len > 11 and std.mem.eql(u8, arg[1..11], "min-depth=")) {
                 //
-                if (args.next()) |depth| {
-                    const trimmed_depth = std.mem.trim(u8, depth, "\"");
-                    cmd_args.maxdepth = std.fmt.parseInt(usize, trimmed_depth, 10) catch {
-                        std.log.err(" not able to parse size specified as [{s}]\n", .{depth});
-                        return 0x7f;
-                    };
-                }
+                const depth = arg[11..];
+                cmd_args.mindepth = std.fmt.parseInt(usize, depth, 10) catch {
+                    std.log.err("Depth specified: [{s}] is invalid\nMust specify maximum depth value for search after -max-depth option\n ", .{depth});
+                    return 0x7f;
+                };
             } else if (std.mem.eql(u8, arg[1..], "empty")) {
                 cmd_args.is_empty = true;
             } else if (std.mem.eql(u8, arg[1..], "c")) {
@@ -432,11 +421,11 @@ pub fn main() !u8 {
             } else if (std.mem.eql(u8, arg[1..], "h")) {
                 try usage();
                 return 0;
+            } else if (std.mem.eql(u8, arg[1..], "max")) {
+                //TODO
             } else if (std.mem.eql(u8, arg[1..], "delete")) {
                 //TODO
             } else if (std.mem.eql(u8, arg[1..], "min")) {
-                //TODO
-            } else if (std.mem.eql(u8, arg[1..], "max")) {
                 //TODO
             } else if (std.mem.eql(u8, arg[1..], "execdir")) {
                 //TODO
